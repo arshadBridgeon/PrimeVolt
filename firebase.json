@@ -1,0 +1,24 @@
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "primevolt-faa42",
+          "appId": "1:70384531681:android:bd0a2fb8de239276b79fa0",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "primevolt-faa42",
+          "configurations": {
+            "android": "1:70384531681:android:bd0a2fb8de239276b79fa0"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

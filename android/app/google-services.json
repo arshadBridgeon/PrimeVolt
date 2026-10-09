@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "70384531681",
+    "project_id": "primevolt-faa42",
+    "storage_bucket": "primevolt-faa42.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:70384531681:android:bd0a2fb8de239276b79fa0",
+        "android_client_info": {
+          "package_name": "com.example.pdf_genarator"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD3lGnyF8jOAW_qSqJMvl9D_y79CPTkiIM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
