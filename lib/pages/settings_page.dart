@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../app_state.dart';
 import '../glass_nav_bar.dart';
@@ -20,6 +21,7 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   final _formKey = GlobalKey<FormState>();
   late CompanySettings _company = widget.appState.company;
+  final _packageInfo = PackageInfo.fromPlatform();
 
   late final _name = TextEditingController(text: _company.name);
   late final _address = TextEditingController(text: _company.address);
@@ -381,6 +383,17 @@ class _SettingsPageState extends State<SettingsPage> {
               label: const Text('Save company details'),
               style: FilledButton.styleFrom(
                 minimumSize: const Size.fromHeight(52),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FutureBuilder<PackageInfo>(
+              future: _packageInfo,
+              builder: (context, snap) => Text(
+                snap.hasData
+                    ? 'Version ${snap.data!.version} (${snap.data!.buildNumber})'
+                    : '',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: AppColors.muted, fontSize: 12.5),
               ),
             ),
           ],

@@ -3,8 +3,8 @@ import 'package:flutter/material.dart';
 import '../app_state.dart';
 import '../theme.dart';
 
-/// Email/password sign-in. Accounts are created by the owner in the Firebase
-/// console (Authentication > Users); there is deliberately no sign-up.
+/// Email/password sign-in, or sign-up with a name so each person gets their
+/// own account and their name shows on what they create.
 class LoginPage extends StatefulWidget {
   final AppState appState;
   const LoginPage({super.key, required this.appState});
@@ -15,33 +15,43 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
   bool _showPassword = false;
+  bool _signUp = false;
   String? _error;
 
   @override
   void dispose() {
+    _name.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
-  Future<void> _signIn() async {
+  Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
     setState(() {
       _busy = true;
       _error = null;
     });
-    final error = await widget.appState.signIn(_email.text, _password.text);
+    final error = _signUp
+        ? await widget.appState.signUp(_name.text, _email.text, _password.text)
+        : await widget.appState.signIn(_email.text, _password.text);
     if (!mounted) return;
     setState(() {
       _busy = false;
       _error = error;
     });
   }
+
+  void _toggleMode() => setState(() {
+    _signUp = !_signUp;
+    _error = null;
+  });
 
   Future<void> _forgotPassword() async {
     final email = _email.text.trim();
@@ -73,20 +83,42 @@ class _LoginPageState extends State<LoginPage> {
                   children: [
                     Image.asset('assets/company_logo.png', height: 170),
                     const SizedBox(height: 28),
-                    const Text(
-                      'Welcome back',
-                      style: TextStyle(
+                    Text(
+                      _signUp ? 'Create account' : 'Welcome back',
+                      style: const TextStyle(
                         fontSize: 26,
                         fontWeight: FontWeight.w800,
                         color: AppColors.text,
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Sign in to manage quotations and project files',
-                      style: TextStyle(color: AppColors.muted, fontSize: 14.5),
+                    Text(
+                      _signUp
+                          ? 'Your name is shown on the quotations, projects '
+                                'and expenses you create'
+                          : 'Sign in to manage quotations and project files',
+                      style: const TextStyle(
+                        color: AppColors.muted,
+                        fontSize: 14.5,
+                      ),
                     ),
                     const SizedBox(height: 24),
+                    if (_signUp) ...[
+                      TextFormField(
+                        controller: _name,
+                        textCapitalization: TextCapitalization.words,
+                        autofillHints: const [AutofillHints.name],
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Your name',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: (v) => (v == null || v.trim().length < 2)
+                            ? 'Please enter your name'
+                            : null,
+                      ),
+                      const SizedBox(height: 14),
+                    ],
                     TextFormField(
                       controller: _email,
                       keyboardType: TextInputType.emailAddress,
@@ -104,9 +136,13 @@ class _LoginPageState extends State<LoginPage> {
                     TextFormField(
                       controller: _password,
                       obscureText: !_showPassword,
-                      autofillHints: const [AutofillHints.password],
+                      autofillHints: [
+                        _signUp
+                            ? AutofillHints.newPassword
+                            : AutofillHints.password,
+                      ],
                       textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _signIn(),
+                      onFieldSubmitted: (_) => _submit(),
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outline),
@@ -120,17 +156,26 @@ class _LoginPageState extends State<LoginPage> {
                               setState(() => _showPassword = !_showPassword),
                         ),
                       ),
-                      validator: (v) => (v == null || v.isEmpty)
-                          ? 'Enter your password'
-                          : null,
+                      validator: (v) {
+                        if (v == null || v.isEmpty) {
+                          return 'Enter your password';
+                        }
+                        if (_signUp && v.length < 6) {
+                          return 'Use at least 6 characters';
+                        }
+                        return null;
+                      },
                     ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _busy ? null : _forgotPassword,
-                        child: const Text('Forgot password?'),
+                    if (_signUp)
+                      const SizedBox(height: 18)
+                    else
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: _busy ? null : _forgotPassword,
+                          child: const Text('Forgot password?'),
+                        ),
                       ),
-                    ),
                     if (_error != null) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
@@ -158,7 +203,7 @@ class _LoginPageState extends State<LoginPage> {
                       const SizedBox(height: 14),
                     ],
                     FilledButton(
-                      onPressed: _busy ? null : _signIn,
+                      onPressed: _busy ? null : _submit,
                       style: FilledButton.styleFrom(
                         minimumSize: const Size.fromHeight(54),
                       ),
@@ -171,13 +216,16 @@ class _LoginPageState extends State<LoginPage> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Sign in'),
+                          : Text(_signUp ? 'Create account' : 'Sign in'),
                     ),
-                    const SizedBox(height: 24),
-                    const Text(
-                      'Accounts are created by the admin.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: AppColors.muted, fontSize: 12.5),
+                    const SizedBox(height: 16),
+                    TextButton(
+                      onPressed: _busy ? null : _toggleMode,
+                      child: Text(
+                        _signUp
+                            ? 'Already have an account? Sign in'
+                            : 'New here? Create an account',
+                      ),
                     ),
                   ],
                 ),

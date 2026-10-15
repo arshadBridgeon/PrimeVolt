@@ -73,6 +73,10 @@ class AppState extends ChangeNotifier {
   /// True while the first snapshots after sign-in are loading.
   bool loading = false;
 
+  /// Name typed on the sign-up form, used until users/{uid} has it so the
+  /// name page doesn't flash right after creating an account.
+  String? _pendingName;
+
   StreamSubscription<User?>? _authSub;
   final _dataSubs = <StreamSubscription<dynamic>>[];
 
@@ -82,12 +86,26 @@ class AppState extends ChangeNotifier {
   static const _localCompanyKey = 'company_settings';
   static const _migratedKey = 'migrated_to_firestore';
 
+  /// Set once this install has started under per-person accounts. Older
+  /// builds shared one login, so the first launch after updating signs that
+  /// session out and each person creates their own account.
+  static const _ownAccountsKey = 'own_accounts_v1';
+
   /// The signature image is per phone, so its path is kept locally.
   static const _signatureKey = 'signature_path';
 
   // ---------- Auth ----------
 
   Future<void> _onAuthChanged(User? newUser) async {
+    if (!(await _prefs.getBool(_ownAccountsKey) ?? false)) {
+      await _prefs.setBool(_ownAccountsKey, true);
+      if (newUser != null) {
+        // Session left over from the shared-login build; this sign-out fires
+        // another auth event with null.
+        await _auth.signOut();
+        return;
+      }
+    }
     user = newUser;
     authReady = true;
     await _stopListening();
@@ -98,6 +116,7 @@ class AppState extends ChangeNotifier {
       expenseCategoryList = [...expenseCategories];
       company = CompanySettings();
       userNames = {};
+      _pendingName = null;
       loading = false;
       notifyListeners();
       return;
@@ -126,6 +145,32 @@ class AppState extends ChangeNotifier {
         'too-many-requests' => 'Too many attempts. Try again in a while.',
         'network-request-failed' => 'No internet connection.',
         _ => e.message ?? 'Sign in failed (${e.code}).',
+      };
+    }
+  }
+
+  /// Creates an account and saves its display name. Returns null on success,
+  /// or a message to show.
+  Future<String?> signUp(String name, String email, String password) async {
+    _pendingName = name.trim();
+    try {
+      await _auth.createUserWithEmailAndPassword(
+        email: email.trim(),
+        password: password,
+      );
+      await saveUserName(name);
+      return null;
+    } on FirebaseAuthException catch (e) {
+      _pendingName = null;
+      return switch (e.code) {
+        'email-already-in-use' =>
+          'An account with this email already exists. Sign in instead.',
+        'invalid-email' => 'That email address is not valid.',
+        'weak-password' => 'Password must be at least 6 characters.',
+        'operation-not-allowed' =>
+          'Email sign-up is turned off in Firebase Authentication.',
+        'network-request-failed' => 'No internet connection.',
+        _ => e.message ?? 'Sign up failed (${e.code}).',
       };
     }
   }
@@ -171,6 +216,10 @@ class AppState extends ChangeNotifier {
             if ((d.data()['name'] as String? ?? '').isNotEmpty)
               d.id: d.data()['name'] as String,
         };
+        final uid = user?.uid;
+        if (uid != null && _pendingName != null) {
+          userNames.putIfAbsent(uid, () => _pendingName!);
+        }
         loaded('users');
       }, onError: onError),
     );
