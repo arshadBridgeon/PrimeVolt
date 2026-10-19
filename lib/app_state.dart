@@ -37,6 +37,8 @@ class AppState extends ChangeNotifier {
       _db.collection('projects');
   CollectionReference<Map<String, dynamic>> get _expensesRef =>
       _db.collection('expenses');
+  CollectionReference<Map<String, dynamic>> get _advancesRef =>
+      _db.collection('advances');
   CollectionReference<Map<String, dynamic>> get _usersRef =>
       _db.collection('users');
   DocumentReference<Map<String, dynamic>> get _categoriesRef =>
@@ -49,6 +51,9 @@ class AppState extends ChangeNotifier {
 
   /// Newest first.
   List<Expense> expenses = [];
+
+  /// Customer advances against quotations, newest first.
+  List<Advance> advances = [];
 
   /// Shared, editable list (settings/expense_categories); defaults until set.
   List<String> expenseCategoryList = [...expenseCategories];
@@ -113,6 +118,7 @@ class AppState extends ChangeNotifier {
       quotations = [];
       projects = [];
       expenses = [];
+      advances = [];
       expenseCategoryList = [...expenseCategories];
       company = CompanySettings();
       userNames = {};
@@ -194,6 +200,7 @@ class AppState extends ChangeNotifier {
       'quotations',
       'projects',
       'expenses',
+      'advances',
       'categories',
       'company',
       'users',
@@ -242,6 +249,13 @@ class AppState extends ChangeNotifier {
         expenses = snap.docs.map((d) => Expense.fromJson(d.data())).toList()
           ..sort((a, b) => b.date.compareTo(a.date));
         loaded('expenses');
+      }, onError: onError),
+    );
+    _dataSubs.add(
+      _advancesRef.snapshots().listen((snap) {
+        advances = snap.docs.map((d) => Advance.fromJson(d.data())).toList()
+          ..sort((a, b) => b.date.compareTo(a.date));
+        loaded('advances');
       }, onError: onError),
     );
     _dataSubs.add(
@@ -410,8 +424,21 @@ class AppState extends ChangeNotifier {
     await saveQuotation(quotation);
   }
 
+  /// Only the person who created a quotation may delete it. Ones made before
+  /// sign-in existed have no creator, so anyone may delete those.
+  bool canDeleteQuotation(Quotation q) =>
+      q.createdByUid.isEmpty || q.createdByUid == user?.uid;
+
   Future<void> deleteQuotation(String id) async {
+    final q = quotationById(id);
+    if (q == null || !canDeleteQuotation(q)) return;
     quotations.removeWhere((quotation) => quotation.id == id);
+    // Advances only make sense with their quotation; linked expenses were
+    // still spent, so they stay in the expense list.
+    for (final a in advances.where((a) => a.quotationId == id).toList()) {
+      advances.remove(a);
+      _write(_advancesRef.doc(a.id).delete());
+    }
     notifyListeners();
     _write(_quotationsRef.doc(id).delete());
   }
@@ -556,12 +583,13 @@ class AppState extends ChangeNotifier {
 
   // ---------- Expenses ----------
 
-  Expense newExpense({String projectId = ''}) {
+  Expense newExpense({String projectId = '', String quotationId = ''}) {
     final now = DateTime.now();
     return Expense(
       id: now.microsecondsSinceEpoch.toString(),
       date: DateTime(now.year, now.month, now.day),
       projectId: projectId,
+      quotationId: quotationId,
       createdByUid: user?.uid ?? '',
       createdByName: userName,
     );
@@ -583,6 +611,51 @@ class AppState extends ChangeNotifier {
     expenses.removeWhere((e) => e.id == id);
     notifyListeners();
     _write(_expensesRef.doc(id).delete());
+  }
+
+  // ---------- Advances & quotation accounts ----------
+
+  Advance newAdvance(String quotationId) {
+    final now = DateTime.now();
+    return Advance(
+      id: now.microsecondsSinceEpoch.toString(),
+      quotationId: quotationId,
+      date: DateTime(now.year, now.month, now.day),
+      createdByUid: user?.uid ?? '',
+      createdByName: userName,
+    );
+  }
+
+  Future<void> saveAdvance(Advance advance) async {
+    final index = advances.indexWhere((a) => a.id == advance.id);
+    if (index == -1) {
+      advances.add(advance);
+    } else {
+      advances[index] = advance;
+    }
+    advances.sort((a, b) => b.date.compareTo(a.date));
+    notifyListeners();
+    _write(_advancesRef.doc(advance.id).set(advance.toJson()));
+  }
+
+  Future<void> deleteAdvance(String id) async {
+    advances.removeWhere((a) => a.id == id);
+    notifyListeners();
+    _write(_advancesRef.doc(id).delete());
+  }
+
+  QuotationAccount accountFor(Quotation q) => QuotationAccount(
+    q,
+    advances.where((a) => a.quotationId == q.id).toList(),
+    expenses.where((e) => e.quotationId == q.id).toList(),
+  );
+
+  Quotation? quotationById(String id) {
+    if (id.isEmpty) return null;
+    for (final q in quotations) {
+      if (q.id == id) return q;
+    }
+    return null;
   }
 
   ProjectFile? projectById(String id) {

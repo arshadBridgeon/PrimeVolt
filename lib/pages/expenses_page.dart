@@ -11,6 +11,7 @@ import '../models.dart';
 import '../theme.dart';
 import '../utils.dart';
 import '../widgets.dart';
+import 'quotation_account_page.dart';
 
 IconData expenseIcon(String category) => switch (category) {
   'Materials' => Icons.inventory_2_outlined,
@@ -178,6 +179,10 @@ class _ExpensesPageState extends State<ExpensesPage> {
   DateTime? _month = DateTime(DateTime.now().year, DateTime.now().month);
   String? _category;
 
+  /// Quotation accounts (advance, spent, balance) vs the plain expense list.
+  bool _byQuotation = true;
+  String _search = '';
+
   String get _periodLabel =>
       _month == null ? 'All time' : DateFormat('MMMM yyyy').format(_month!);
 
@@ -244,16 +249,18 @@ class _ExpensesPageState extends State<ExpensesPage> {
                 icon: const Icon(Icons.category_outlined),
                 onPressed: () => showManageCategories(context, appState),
               ),
-              IconButton(
-                tooltip: 'Download PDF report',
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                onPressed: () => _openReport(list),
-              ),
+              if (!_byQuotation)
+                IconButton(
+                  tooltip: 'Download PDF report',
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  onPressed: () => _openReport(list),
+                ),
             ],
           ),
           floatingActionButton: Padding(
             padding: EdgeInsets.only(bottom: navBarClearance(context)),
             child: FloatingActionButton.extended(
+              heroTag: 'expenses-fab',
               onPressed: () => showExpenseEditor(context, appState),
               icon: const Icon(Icons.add),
               label: const Text('Add expense'),
@@ -267,75 +274,197 @@ class _ExpensesPageState extends State<ExpensesPage> {
               navBarClearance(context) + 84,
             ),
             children: [
-              _summaryCard(_periodTotal(), total, list.length),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 40,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    for (final c in [null, ...appState.expenseCategoryList])
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: ChoiceChip(
-                          label: Text(c ?? 'All'),
-                          selected: _category == c,
-                          showCheckmark: false,
-                          onSelected: (_) => setState(() => _category = c),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
-              if (list.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 24),
-                  child: EmptyState(
-                    icon: Icons.account_balance_wallet_outlined,
-                    title: 'No expenses',
-                    message: 'Tap "Add expense" to record one.',
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(
+                    value: true,
+                    icon: Icon(Icons.receipt_long_outlined, size: 18),
+                    label: Text('Quotations'),
                   ),
-                )
-              else
-                for (final entry in groups.entries) ...[
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
-                    child: Row(
-                      children: [
-                        Text(
-                          formatDateShort(entry.key),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.text,
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          formatMoney(
-                            entry.value.fold<double>(
-                              0,
-                              (acc, e) => acc + e.amount,
-                            ),
-                          ),
-                          style: const TextStyle(
-                            color: AppColors.muted,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
+                  ButtonSegment(
+                    value: false,
+                    icon: Icon(Icons.list_alt_outlined, size: 18),
+                    label: Text('All expenses'),
                   ),
-                  for (final e in entry.value) ...[
-                    _ExpenseTile(expense: e, appState: appState),
-                    const SizedBox(height: 8),
-                  ],
                 ],
+                selected: {_byQuotation},
+                showSelectedIcon: false,
+                onSelectionChanged: (s) =>
+                    setState(() => _byQuotation = s.first),
+              ),
+              const SizedBox(height: 12),
+              if (_byQuotation)
+                ..._quotationAccounts(appState)
+              else
+                ..._expenseList(appState, list, total, groups),
             ],
           ),
         );
       },
     );
+  }
+
+  List<Widget> _quotationAccounts(AppState appState) {
+    final query = _search.trim().toLowerCase();
+    final accounts = appState.quotations
+        .where(
+          (q) =>
+              query.isEmpty ||
+              q.customerName.toLowerCase().contains(query) ||
+              q.quoteNumber.contains(query) ||
+              q.customerPhone.contains(query),
+        )
+        .map(appState.accountFor)
+        .toList();
+    final all = appState.quotations.map(appState.accountFor);
+    final quoted = all.fold<double>(0, (acc, a) => acc + a.quoteValue);
+    final received = all.fold<double>(0, (acc, a) => acc + a.advanceReceived);
+    final spent = all.fold<double>(0, (acc, a) => acc + a.totalExpenses);
+
+    return [
+      _totalsCard(quoted, received, spent),
+      const SizedBox(height: 12),
+      TextField(
+        onChanged: (v) => setState(() => _search = v),
+        decoration: const InputDecoration(
+          hintText: 'Search customer or quotation no.',
+          prefixIcon: Icon(Icons.search),
+        ),
+      ),
+      const SizedBox(height: 12),
+      if (accounts.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 24),
+          child: EmptyState(
+            icon: Icons.receipt_long_outlined,
+            title: 'No quotations',
+            message:
+                'Every quotation you create shows up here with its advance, '
+                'expenses and balance.',
+          ),
+        )
+      else
+        for (final a in accounts) ...[
+          QuotationAccountCard(
+            account: a,
+            onTap: () => openQuotationAccount(context, appState, a.quotation),
+          ),
+          const SizedBox(height: 10),
+        ],
+    ];
+  }
+
+  Widget _totalsCard(double quoted, double received, double spent) {
+    final dim = Colors.white.withValues(alpha: 0.72);
+    Widget figure(String label, double value) => Expanded(
+      child: Column(
+        children: [
+          Text(label, style: TextStyle(color: dim, fontSize: 12)),
+          const SizedBox(height: 2),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              formatMoney(value),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 16,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 16),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [AppColors.navy, AppColors.navyDark],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        children: [
+          figure('Quoted', quoted),
+          figure('Advance', received),
+          figure('Spent', spent),
+          figure('Balance', quoted - spent),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _expenseList(
+    AppState appState,
+    List<Expense> list,
+    double total,
+    Map<DateTime, List<Expense>> groups,
+  ) {
+    return [
+      _summaryCard(_periodTotal(), total, list.length),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 40,
+        child: ListView(
+          scrollDirection: Axis.horizontal,
+          children: [
+            for (final c in [null, ...appState.expenseCategoryList])
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(c ?? 'All'),
+                  selected: _category == c,
+                  showCheckmark: false,
+                  onSelected: (_) => setState(() => _category = c),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 8),
+      if (list.isEmpty)
+        const Padding(
+          padding: EdgeInsets.only(top: 24),
+          child: EmptyState(
+            icon: Icons.account_balance_wallet_outlined,
+            title: 'No expenses',
+            message: 'Tap "Add expense" to record one.',
+          ),
+        )
+      else
+        for (final entry in groups.entries) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 14, 4, 8),
+            child: Row(
+              children: [
+                Text(
+                  formatDateShort(entry.key),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.text,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  formatMoney(
+                    entry.value.fold<double>(0, (acc, e) => acc + e.amount),
+                  ),
+                  style: const TextStyle(
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          for (final e in entry.value) ...[
+            ExpenseTile(expense: e, appState: appState),
+            const SizedBox(height: 8),
+          ],
+        ],
+    ];
   }
 
   Widget _summaryCard(double periodTotal, double total, int count) {
@@ -434,21 +563,33 @@ class _ExpensesPageState extends State<ExpensesPage> {
   }
 }
 
-class _ExpenseTile extends StatelessWidget {
+class ExpenseTile extends StatelessWidget {
   final Expense expense;
   final AppState appState;
-  const _ExpenseTile({required this.expense, required this.appState});
+
+  /// False inside a quotation's own account, where the link is obvious.
+  final bool showQuotation;
+  const ExpenseTile({
+    super.key,
+    required this.expense,
+    required this.appState,
+    this.showQuotation = true,
+  });
 
   @override
   Widget build(BuildContext context) {
     final e = expense;
     final color = expenseColor(e.category);
     final project = appState.projectById(e.projectId);
+    final quotation = showQuotation
+        ? appState.quotationById(e.quotationId)
+        : null;
     final creator = appState.creatorName(e.createdByUid, e.createdByName);
     final sub = [
-      e.category,
+      if (showQuotation) e.category else formatDateShort(e.date),
       e.paymentMode,
       if (e.paidTo.isNotEmpty) e.paidTo,
+      if (quotation != null) 'QT #${quotation.quoteNumber}',
       if (project != null) 'Project #${project.projectNumber}',
     ].join('  •  ');
 
@@ -525,6 +666,7 @@ Future<void> showExpenseEditor(
   BuildContext context,
   AppState appState, {
   Expense? expense,
+  String quotationId = '',
 }) {
   return showModalBottomSheet(
     context: context,
@@ -533,7 +675,7 @@ Future<void> showExpenseEditor(
     backgroundColor: Colors.white,
     builder: (_) => _ExpenseSheet(
       appState: appState,
-      expense: expense?.copy() ?? appState.newExpense(),
+      expense: expense?.copy() ?? appState.newExpense(quotationId: quotationId),
       isNew: expense == null,
     ),
   );
@@ -644,6 +786,49 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
     if (picked != null) setState(() => e.projectId = picked);
   }
 
+  Future<void> _pickQuotation() async {
+    final quotations = widget.appState.quotations;
+    final picked = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      builder: (context) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+          ),
+          child: ListView(
+            shrinkWrap: true,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.block),
+                title: const Text('No quotation'),
+                onTap: () => Navigator.pop(context, ''),
+              ),
+              for (final q in quotations)
+                ListTile(
+                  leading: const Icon(
+                    Icons.receipt_long_outlined,
+                    color: AppColors.navy,
+                  ),
+                  title: Text(
+                    q.customerName.isEmpty ? 'No name' : q.customerName,
+                  ),
+                  subtitle: Text(
+                    '#${q.quoteNumber}  •  ${formatMoney(q.total)}',
+                  ),
+                  selected: q.id == e.quotationId,
+                  onTap: () => Navigator.pop(context, q.id),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (picked != null) setState(() => e.quotationId = picked);
+  }
+
   Widget _chips(
     List<String> options,
     String value,
@@ -665,6 +850,7 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   @override
   Widget build(BuildContext context) {
     final project = widget.appState.projectById(e.projectId);
+    final quotation = widget.appState.quotationById(e.quotationId);
     const label = TextStyle(color: AppColors.muted, fontSize: 13);
 
     return Padding(
@@ -704,6 +890,27 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
                 ),
                 validator: (v) =>
                     parseNumber(v ?? '') <= 0 ? 'Enter the amount' : null,
+              ),
+              const SizedBox(height: 14),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: _pickQuotation,
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Quotation (deducted from its amount)',
+                    suffixIcon: Icon(Icons.arrow_drop_down),
+                  ),
+                  child: Text(
+                    quotation == null
+                        ? 'Not linked'
+                        : '#${quotation.quoteNumber}  ${quotation.customerName}',
+                    style: TextStyle(
+                      color: quotation == null
+                          ? AppColors.muted
+                          : AppColors.text,
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(height: 14),
               const Text('Category', style: label),

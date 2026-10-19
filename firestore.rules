@@ -1,11 +1,38 @@
 rules_version = '2';
 
-// Only the staff accounts added in Firebase Authentication can use the data.
-// Everyone who signs in shares the same quotations, projects and settings.
+// Everyone who signs in shares the same quotations, projects, expenses and
+// settings. Collections are listed one by one (no catch-all) so the
+// quotation delete rule below can't be overridden by a broader match.
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Only the creator may delete a quotation. Quotations made before
+    // sign-in existed have no creator, so anyone may delete those.
+    match /quotations/{id} {
+      allow read, create, update: if signedIn();
+      allow delete: if signedIn() && (
+        resource.data.get('createdByUid', '') == '' ||
+        resource.data.createdByUid == request.auth.uid
+      );
+    }
+
+    match /projects/{id} {
+      allow read, write: if signedIn();
+    }
+    match /expenses/{id} {
+      allow read, write: if signedIn();
+    }
+    match /advances/{id} {
+      allow read, write: if signedIn();
+    }
+    match /users/{uid} {
+      allow read, write: if signedIn();
+    }
+    match /settings/{id} {
+      allow read, write: if signedIn();
     }
   }
 }

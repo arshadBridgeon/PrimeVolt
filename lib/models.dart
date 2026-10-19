@@ -361,6 +361,9 @@ class Expense {
 
   /// Linked project file id, or ''.
   String projectId;
+
+  /// Linked quotation id, or ''. Its account deducts this expense.
+  String quotationId;
   String notes;
   String createdByUid;
   String createdByName;
@@ -374,6 +377,7 @@ class Expense {
     this.paymentMode = 'Cash',
     this.paidTo = '',
     this.projectId = '',
+    this.quotationId = '',
     this.notes = '',
     this.createdByUid = '',
     this.createdByName = '',
@@ -390,6 +394,7 @@ class Expense {
     'paymentMode': paymentMode,
     'paidTo': paidTo,
     'projectId': projectId,
+    'quotationId': quotationId,
     'notes': notes,
     'createdByUid': createdByUid,
     'createdByName': createdByName,
@@ -404,8 +409,90 @@ class Expense {
     paymentMode: json['paymentMode'] ?? 'Cash',
     paidTo: json['paidTo'] ?? '',
     projectId: json['projectId'] ?? '',
+    quotationId: json['quotationId'] ?? '',
     notes: json['notes'] ?? '',
     createdByUid: json['createdByUid'] ?? '',
     createdByName: json['createdByName'] ?? '',
   );
+}
+
+// ------------------------------------------------------------
+// Advance (money received from the customer against a quotation)
+// ------------------------------------------------------------
+
+class Advance {
+  String id;
+  String quotationId;
+  DateTime date;
+  double amount;
+  String paymentMode;
+  String notes;
+  String createdByUid;
+  String createdByName;
+
+  Advance({
+    required this.id,
+    required this.quotationId,
+    required this.date,
+    this.amount = 0,
+    this.paymentMode = 'Cash',
+    this.notes = '',
+    this.createdByUid = '',
+    this.createdByName = '',
+  });
+
+  Advance copy() => Advance.fromJson(toJson());
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'quotationId': quotationId,
+    'date': date.toIso8601String(),
+    'amount': amount,
+    'paymentMode': paymentMode,
+    'notes': notes,
+    'createdByUid': createdByUid,
+    'createdByName': createdByName,
+  };
+
+  factory Advance.fromJson(Map<String, dynamic> json) => Advance(
+    id: json['id'] ?? DateTime.now().microsecondsSinceEpoch.toString(),
+    quotationId: json['quotationId'] ?? '',
+    date: DateTime.tryParse(json['date'] ?? '') ?? DateTime.now(),
+    amount: (json['amount'] as num?)?.toDouble() ?? 0,
+    paymentMode: json['paymentMode'] ?? 'Cash',
+    notes: json['notes'] ?? '',
+    createdByUid: json['createdByUid'] ?? '',
+    createdByName: json['createdByName'] ?? '',
+  );
+}
+
+/// Money in and out for one quotation, computed from advances and expenses.
+class QuotationAccount {
+  final Quotation quotation;
+  final List<Advance> advances;
+  final List<Expense> expenses;
+
+  QuotationAccount(this.quotation, this.advances, this.expenses);
+
+  double get quoteValue => quotation.total;
+  double get advanceReceived => advances.fold(0, (acc, a) => acc + a.amount);
+  double get totalExpenses => expenses.fold(0, (acc, e) => acc + e.amount);
+
+  /// Still to collect from the customer.
+  double get pendingFromCustomer => quoteValue - advanceReceived;
+
+  /// Quote value minus everything spent on it.
+  double get margin => quoteValue - totalExpenses;
+
+  /// Advance in hand minus what has been spent so far.
+  double get cashInHand => advanceReceived - totalExpenses;
+
+  /// Category -> total, largest first.
+  List<MapEntry<String, double>> get byCategory {
+    final map = <String, double>{};
+    for (final e in expenses) {
+      map[e.category] = (map[e.category] ?? 0) + e.amount;
+    }
+    return map.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+  }
 }

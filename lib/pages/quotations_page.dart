@@ -43,6 +43,7 @@ class _QuotationsPageState extends State<QuotationsPage> {
           floatingActionButton: Padding(
             padding: EdgeInsets.only(bottom: navBarClearance(context)),
             child: FloatingActionButton.extended(
+              heroTag: 'quotations-fab',
               onPressed: () => createQuotation(context, appState),
               icon: const Icon(Icons.add),
               label: const Text('New'),

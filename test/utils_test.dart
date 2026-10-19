@@ -66,4 +66,37 @@ void main() {
     expect(back.balance, 136000);
     expect(ProjectFile.fromJson({}).inspectionStatus, 'Pending');
   });
+
+  test('quotation account deducts expenses from the quote', () {
+    final now = DateTime(2026, 10, 19);
+    final q = Quotation(
+      id: 'q1',
+      quoteNumber: '0300',
+      quotationDate: now,
+      expiryDate: now,
+      customerName: 'A',
+      items: [],
+      roundOff: 200000,
+    );
+    Expense spend(String category, double amount) => Expense(
+      id: '$category$amount',
+      date: now,
+      category: category,
+      amount: amount,
+      quotationId: 'q1',
+    );
+    final account = QuotationAccount(
+      q,
+      [Advance(id: 'a1', quotationId: 'q1', date: now, amount: 50000)],
+      [spend('Materials', 120000), spend('Fuel', 2000), spend('Food', 1500)],
+    );
+    expect(account.quoteValue, 200000);
+    expect(account.advanceReceived, 50000);
+    expect(account.totalExpenses, 123500);
+    expect(account.margin, 76500);
+    expect(account.pendingFromCustomer, 150000);
+    expect(account.cashInHand, -73500);
+    expect(account.byCategory.first.key, 'Materials');
+    expect(Expense.fromJson({}).quotationId, '');
+  });
 }

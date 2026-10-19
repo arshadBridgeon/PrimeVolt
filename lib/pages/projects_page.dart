@@ -39,6 +39,7 @@ class _ProjectsPageState extends State<ProjectsPage> {
           floatingActionButton: Padding(
             padding: EdgeInsets.only(bottom: navBarClearance(context)),
             child: FloatingActionButton.extended(
+              heroTag: 'projects-fab',
               onPressed: () => createProject(context, appState),
               icon: const Icon(Icons.add),
               label: const Text('New'),
