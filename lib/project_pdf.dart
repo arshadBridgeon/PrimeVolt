@@ -27,10 +27,13 @@ PdfColor _statusColor(String status) {
   return PdfColor.fromHex('#C77700');
 }
 
+/// [account] is the linked quotation's money (advances, expenses, balance);
+/// its section is left out when the project has no quotation.
 Future<Uint8List> generateProjectPdfBytes(
   ProjectFile p,
-  CompanySettings company,
-) async {
+  CompanySettings company, {
+  QuotationAccount? account,
+}) async {
   final kit = await PdfKit.load(company);
   final t = kit.t;
   final style = kit.style;
@@ -198,6 +201,154 @@ Future<Uint8List> generateProjectPdfBytes(
 
   final hasPayment = p.projectAmount != 0 || p.amountReceived != 0;
 
+  /// Date / description / amount table with a bold total row.
+  pw.Widget ledger(
+    List<(DateTime, String, double)> rows,
+    String totalLabel,
+    double total,
+    PdfColor color,
+  ) {
+    pw.Widget cell(
+      String text, {
+      bool bold = false,
+      PdfColor? textColor,
+      pw.TextAlign align = pw.TextAlign.left,
+    }) => pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      child: pw.Text(
+        text,
+        textAlign: align,
+        style: style(size: 9.5, bold: bold, color: textColor),
+      ),
+    );
+
+    return pw.Table(
+      columnWidths: const {
+        0: pw.FixedColumnWidth(78),
+        1: pw.FlexColumnWidth(),
+        2: pw.FixedColumnWidth(90),
+      },
+      border: pw.TableBorder(horizontalInside: line),
+      children: [
+        for (final (date, text, amount) in rows)
+          pw.TableRow(
+            children: [
+              cell(formatDate(date)),
+              cell(orDash(text)),
+              cell(kit.money(amount), align: pw.TextAlign.right),
+            ],
+          ),
+        pw.TableRow(
+          decoration: pw.BoxDecoration(color: _sectionFill),
+          children: [
+            pw.SizedBox(),
+            cell(totalLabel, bold: true),
+            cell(
+              kit.money(total),
+              bold: true,
+              textColor: color,
+              align: pw.TextAlign.right,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  final a = account;
+  final accountSections = a == null
+      ? <pw.Widget>[]
+      : [
+          gap,
+          section('ACCOUNT  (QUOTATION #${a.quotation.quoteNumber})', [
+            tiles([
+              amountTile('Quote Value', a.quoteValue),
+              amountTile('Advance Received', a.advanceReceived, color: _green),
+              amountTile('Total Expenses', a.totalExpenses, color: _red),
+              amountTile(
+                a.margin < 0 ? 'Loss' : 'Balance',
+                a.margin,
+                color: a.margin < 0 ? _red : _green,
+              ),
+            ]),
+            pw.Container(
+              decoration: pw.BoxDecoration(border: pw.Border(top: line)),
+              child: tiles([
+                amountTile('Pending From Customer', a.pendingFromCustomer),
+                amountTile(
+                  'Advance Left After Expenses',
+                  a.cashInHand,
+                  color: a.cashInHand < 0 ? _red : null,
+                ),
+              ]),
+            ),
+          ]),
+          if (a.advances.isNotEmpty) ...[
+            gap,
+            section('ADVANCES RECEIVED', [
+              ledger(
+                [
+                  for (final x in a.advances)
+                    (
+                      x.date,
+                      [
+                        x.paymentMode,
+                        if (x.notes.trim().isNotEmpty) x.notes.trim(),
+                      ].join(' - '),
+                      x.amount,
+                    ),
+                ],
+                'Total advance',
+                a.advanceReceived,
+                _green,
+              ),
+            ]),
+          ],
+          if (a.expenses.isNotEmpty) ...[
+            gap,
+            section('EXPENSES', [
+              ledger(
+                [
+                  for (final e in [
+                    ...a.expenses,
+                  ]..sort((x, y) => x.date.compareTo(y.date)))
+                    (
+                      e.date,
+                      [
+                        e.category,
+                        if (e.description.trim().isNotEmpty)
+                          e.description.trim(),
+                        if (e.paidTo.trim().isNotEmpty) e.paidTo.trim(),
+                      ].join(' - '),
+                      e.amount,
+                    ),
+                ],
+                'Total expenses',
+                a.totalExpenses,
+                _red,
+              ),
+              pw.Container(
+                decoration: pw.BoxDecoration(border: pw.Border(top: line)),
+                padding: const pw.EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                child: pw.Wrap(
+                  spacing: 16,
+                  runSpacing: 4,
+                  children: [
+                    for (final c in a.byCategory)
+                      pw.Text(
+                        '${t(c.key)}: ${kit.money(c.value)}',
+                        style: style(size: 9, color: pdfGrey),
+                      ),
+                  ],
+                ),
+              ),
+            ]),
+          ],
+        ];
+
   final doc = kit.document('Project File ${p.projectNumber}');
   doc.addPage(
     kit.page(
@@ -273,6 +424,7 @@ Future<Uint8List> generateProjectPdfBytes(
             ]),
           ]),
         ],
+        ...accountSections,
         if (p.notes.trim().isNotEmpty) ...[
           gap,
           section('NOTES', [
@@ -304,9 +456,10 @@ Future<void> shareProjectPdf(
   ProjectFile p,
   CompanySettings company, {
   Future<Uint8List>? bytes,
+  QuotationAccount? account,
 }) => sharePdfFile(
   context,
-  bytes: bytes ?? generateProjectPdfBytes(p, company),
+  bytes: bytes ?? generateProjectPdfBytes(p, company, account: account),
   fileName: projectPdfFileName(p),
   message: 'Project File #${p.projectNumber} from ${company.name}',
 );

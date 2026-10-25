@@ -9,6 +9,7 @@ import '../models.dart';
 import '../theme.dart';
 import '../utils.dart';
 import '../widgets.dart';
+import 'quotation_actions.dart';
 
 String _numText(double value) => value == 0 ? '' : formatQty(value);
 
@@ -506,9 +507,54 @@ class _ProjectEditorPageState extends State<ProjectEditorPage> {
               ],
             ),
           ),
+          const SizedBox(height: 12),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _pickQuotation,
+            child: InputDecorator(
+              decoration: const InputDecoration(
+                labelText: 'Linked quotation',
+                helperText: 'Its advances, expenses and balance go in the PDF',
+                suffixIcon: Icon(Icons.arrow_drop_down),
+              ),
+              child: Builder(
+                builder: (context) {
+                  final q = widget.appState.quotationById(p.quotationId);
+                  return Text(
+                    q == null
+                        ? 'Not linked'
+                        : '#${q.quoteNumber}  ${q.customerName}',
+                    style: TextStyle(
+                      color: q == null ? AppColors.muted : AppColors.text,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _pickQuotation() async {
+    final picked = await pickQuotation(
+      context,
+      widget.appState,
+      selectedId: p.quotationId,
+      showProjects: true,
+    );
+    if (picked == null) return;
+    final q = widget.appState.quotationById(picked);
+    _changed(() {
+      p.quotationId = picked;
+      if (q == null) return;
+      // Fill only what is still blank, so typed details are kept.
+      if (_name.text.trim().isEmpty) _name.text = q.customerName;
+      if (_phone.text.trim().isEmpty) _phone.text = q.customerPhone;
+      if (_address.text.trim().isEmpty) _address.text = q.customerAddress;
+      if (parseNumber(_amount.text) == 0) _amount.text = _numText(q.total);
+    });
   }
 
   Widget _photosSection() {

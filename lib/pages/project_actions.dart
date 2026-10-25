@@ -6,6 +6,7 @@ import '../project_pdf.dart';
 import '../theme.dart';
 import 'project_editor_page.dart';
 import 'project_preview_page.dart';
+import 'quotation_actions.dart';
 
 Future<void> openProjectPreview(
   BuildContext context,
@@ -40,11 +41,26 @@ Future<void> openProjectEditor(
   }
 }
 
+/// Without [from], first asks which quotation the project is for, so its
+/// customer, amount and account (advances, expenses) come with it.
 Future<void> createProject(
   BuildContext context,
   AppState appState, {
   Quotation? from,
-}) => openProjectEditor(context, appState, appState.newProject(from: from));
+}) async {
+  if (from == null) {
+    final picked = await pickQuotation(
+      context,
+      appState,
+      title: 'Project for which quotation?',
+      noneLabel: 'Without quotation',
+      showProjects: true,
+    );
+    if (picked == null || !context.mounted) return;
+    from = appState.quotationById(picked);
+  }
+  await openProjectEditor(context, appState, appState.newProject(from: from));
+}
 
 Future<void> showProjectActions(
   BuildContext context,
@@ -107,7 +123,12 @@ Future<void> showProjectActions(
             tile(
               Icons.share_outlined,
               'Share PDF',
-              () => shareProjectPdf(context, p, appState.company),
+              () => shareProjectPdf(
+                context,
+                p,
+                appState.company,
+                account: appState.accountForProject(p),
+              ),
             ),
             tile(Icons.delete_outline, 'Delete', () async {
               final ok = await showDialog<bool>(

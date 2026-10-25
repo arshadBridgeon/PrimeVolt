@@ -4,6 +4,7 @@ import '../app_state.dart';
 import '../models.dart';
 import '../pdf_service.dart';
 import '../theme.dart';
+import '../utils.dart';
 import 'editor_page.dart';
 import 'preview_page.dart';
 import 'project_actions.dart';
@@ -61,6 +62,137 @@ Future<void> createQuotation(
       customerAddress: customerAddress,
     ),
   );
+}
+
+/// Searchable quotation list. Returns the picked id, '' for [noneLabel], or
+/// null when dismissed. With [showProjects], quotations that already have a
+/// project file are tagged so the same job isn't filed twice by mistake.
+Future<String?> pickQuotation(
+  BuildContext context,
+  AppState appState, {
+  String selectedId = '',
+  String title = 'Select quotation',
+  String noneLabel = 'No quotation',
+  bool showProjects = false,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    backgroundColor: Colors.white,
+    builder: (context) => _QuotationPickerSheet(
+      appState: appState,
+      selectedId: selectedId,
+      title: title,
+      noneLabel: noneLabel,
+      showProjects: showProjects,
+    ),
+  );
+}
+
+class _QuotationPickerSheet extends StatefulWidget {
+  final AppState appState;
+  final String selectedId;
+  final String title;
+  final String noneLabel;
+  final bool showProjects;
+  const _QuotationPickerSheet({
+    required this.appState,
+    required this.selectedId,
+    required this.title,
+    required this.noneLabel,
+    required this.showProjects,
+  });
+
+  @override
+  State<_QuotationPickerSheet> createState() => _QuotationPickerSheetState();
+}
+
+class _QuotationPickerSheetState extends State<_QuotationPickerSheet> {
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _query.trim().toLowerCase();
+    final list = widget.appState.quotations.where(
+      (q) =>
+          query.isEmpty ||
+          q.customerName.toLowerCase().contains(query) ||
+          q.quoteNumber.contains(query) ||
+          q.customerPhone.contains(query),
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.8,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
+                child: Text(
+                  widget.title,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: TextField(
+                  onChanged: (v) => setState(() => _query = v),
+                  decoration: const InputDecoration(
+                    hintText: 'Search customer or quotation no.',
+                    prefixIcon: Icon(Icons.search),
+                  ),
+                ),
+              ),
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    ListTile(
+                      leading: const Icon(Icons.block),
+                      title: Text(widget.noneLabel),
+                      onTap: () => Navigator.pop(context, ''),
+                    ),
+                    for (final q in list)
+                      ListTile(
+                        leading: const Icon(
+                          Icons.receipt_long_outlined,
+                          color: AppColors.navy,
+                        ),
+                        title: Text(
+                          q.customerName.isEmpty ? 'No name' : q.customerName,
+                        ),
+                        subtitle: Text(
+                          [
+                            '#${q.quoteNumber}',
+                            formatMoney(q.total),
+                            if (widget.showProjects)
+                              for (final p in widget.appState.projects)
+                                if (p.quotationId == q.id)
+                                  'Project #${p.projectNumber} exists',
+                          ].join('  •  '),
+                        ),
+                        selected: q.id == widget.selectedId,
+                        onTap: () => Navigator.pop(context, q.id),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<bool> confirmDelete(BuildContext context, Quotation q) async {

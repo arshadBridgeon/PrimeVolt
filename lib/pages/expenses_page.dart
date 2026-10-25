@@ -12,6 +12,7 @@ import '../theme.dart';
 import '../utils.dart';
 import '../widgets.dart';
 import 'quotation_account_page.dart';
+import 'quotation_actions.dart';
 
 IconData expenseIcon(String category) => switch (category) {
   'Materials' => Icons.inventory_2_outlined,
@@ -787,44 +788,10 @@ class _ExpenseSheetState extends State<_ExpenseSheet> {
   }
 
   Future<void> _pickQuotation() async {
-    final quotations = widget.appState.quotations;
-    final picked = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      backgroundColor: Colors.white,
-      builder: (context) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.7,
-          ),
-          child: ListView(
-            shrinkWrap: true,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.block),
-                title: const Text('No quotation'),
-                onTap: () => Navigator.pop(context, ''),
-              ),
-              for (final q in quotations)
-                ListTile(
-                  leading: const Icon(
-                    Icons.receipt_long_outlined,
-                    color: AppColors.navy,
-                  ),
-                  title: Text(
-                    q.customerName.isEmpty ? 'No name' : q.customerName,
-                  ),
-                  subtitle: Text(
-                    '#${q.quoteNumber}  •  ${formatMoney(q.total)}',
-                  ),
-                  selected: q.id == e.quotationId,
-                  onTap: () => Navigator.pop(context, q.id),
-                ),
-            ],
-          ),
-        ),
-      ),
+    final picked = await pickQuotation(
+      context,
+      widget.appState,
+      selectedId: e.quotationId,
     );
     if (picked != null) setState(() => e.quotationId = picked);
   }

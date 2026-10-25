@@ -650,6 +650,12 @@ class AppState extends ChangeNotifier {
     expenses.where((e) => e.quotationId == q.id).toList(),
   );
 
+  /// Account of the quotation a project was created from, or null.
+  QuotationAccount? accountForProject(ProjectFile p) {
+    final q = quotationById(p.quotationId);
+    return q == null ? null : accountFor(q);
+  }
+
   Quotation? quotationById(String id) {
     if (id.isEmpty) return null;
     for (final q in quotations) {
